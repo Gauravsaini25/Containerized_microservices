@@ -1,0 +1,77 @@
+# Nginx ConfigMap for Kubernetes
+# ================================
+# Modified nginx.conf that routes to K8s service names.
+# Key differences from Swarm nginx.conf:
+#   - Uses K8s CoreDNS resolver (kube-dns.kube-system.svc.cluster.local)
+#   - Routes /api/ directly to backend service (K8s round-robin)
+#   - No loadbalancer or orchestrator proxies (those are Swarm-specific)
+#   - Adds /k8s-info endpoint for platform identification
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: cc-research
+data:
+  default.conf: |
+    # Nginx Configuration for Kubernetes Deployment
+    # Routes to K8s services via CoreDNS
+
+    server {
+        listen 80;
+        server_name localhost;
+
+        # K8s CoreDNS resolver (ClusterIP of kube-dns)
+        resolver 10.96.0.10 valid=5s ipv6=off;
+        resolver_timeout 5s;
+
+        access_log /var/log/nginx/access.log;
+        error_log /var/log/nginx/error.log;
+
+        # K8s Dashboard (green-themed, distinct from Swarm)
+        location = / {
+            root /usr/share/nginx/html;
+            try_files /k8s-dashboard.html =404;
+        }
+
+        # API endpoints - routed directly to backend service
+        # K8s Service provides default round-robin load balancing
+        # (contrast with Swarm's Algorithm 2 memory-based routing)
+        location /api/ {
+            set $backend_service http://backend.cc-research.svc.cluster.local:5000;
+            rewrite ^/api/(.*) /$1 break;
+            proxy_pass $backend_service;
+
+            # Force a new TCP connection per request so kube-proxy can
+            # distribute each request to a different pod (round-robin).
+            # Without this, connection reuse sends all traffic to one pod.
+            proxy_http_version 1.1;
+            proxy_set_header Connection "close";
+
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            proxy_connect_timeout 10s;
+            proxy_read_timeout 30s;
+            proxy_send_timeout 30s;
+        }
+
+        # Platform identifier endpoint
+        location /platform {
+            default_type application/json;
+            return 200 '{"platform": "kubernetes", "load_balancing": "round-robin (kube-proxy)", "auto_scaling": "HPA", "service_discovery": "CoreDNS"}';
+        }
+
+        # Health check
+        location /nginx-health {
+            access_log off;
+            return 200 "Nginx is healthy (Kubernetes)\n";
+            add_header Content-Type text/plain;
+        }
+
+        location /nginx-status {
+            stub_status on;
+            access_log off;
+        }
+    }

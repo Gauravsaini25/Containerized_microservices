@@ -1,0 +1,67 @@
+# Redis Deployment & Service for Kubernetes
+# ============================================
+# Demonstrates Kubernetes Service Discovery:
+#   Pods resolve "redis" via CoreDNS → ClusterIP
+#   Equivalent to Docker Swarm's overlay DNS resolution
+#
+# Swarm equivalent: redis service in docker-compose.yml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: cc-research
+  labels:
+    app: redis
+    component: cache
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+        component: cache
+    spec:
+      containers:
+        - name: redis
+          image: redis:alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            limits:
+              cpu: "250m"
+              memory: "128Mi"
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+# ClusterIP Service - enables DNS-based service discovery
+# Pods can reach Redis at: redis.cc-research.svc.cluster.local
+# Or simply "redis" within the same namespace
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: cc-research
+  labels:
+    app: redis
+spec:
+  type: ClusterIP
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+      protocol: TCP

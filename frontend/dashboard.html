@@ -169,6 +169,64 @@
             </tbody>
         </table>
     </div>
+
+    <!-- Platform Comparison Section -->
+    <div class="section-title">🆚 Platform Comparison: Docker Swarm vs Kubernetes</div>
+    <div class="grid grid-2">
+        <div class="card" style="border-color: rgba(99,102,241,0.4);">
+            <div class="card-title" style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:1.2rem;">🐳</span> Docker Swarm
+                <span class="tag tag-algo1">CURRENT</span>
+            </div>
+            <table class="sd-table">
+                <tr><td style="color:#6b7280;">Load Balancing</td><td style="color:#818cf8;">Algorithm 2 (Memory-Based)</td></tr>
+                <tr><td style="color:#6b7280;">Auto-Scaling</td><td style="color:#818cf8;">Algorithm 1 (Custom Orchestrator)</td></tr>
+                <tr><td style="color:#6b7280;">Service Discovery</td><td style="color:#818cf8;">Overlay Network DNS</td></tr>
+                <tr><td style="color:#6b7280;">Self-Healing</td><td style="color:#818cf8;">Swarm Restart Policy</td></tr>
+                <tr><td style="color:#6b7280;">Dashboard Port</td><td style="color:#22c55e;">localhost:8888</td></tr>
+            </table>
+        </div>
+        <div class="card" style="border-color: rgba(34,197,94,0.4);">
+            <div class="card-title" style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:1.2rem;">☸️</span> Kubernetes
+                <span class="tag tag-algo2">PARALLEL</span>
+            </div>
+            <table class="sd-table">
+                <tr><td style="color:#6b7280;">Load Balancing</td><td style="color:#34d399;">kube-proxy Round-Robin</td></tr>
+                <tr><td style="color:#6b7280;">Auto-Scaling</td><td style="color:#34d399;">HPA (Horizontal Pod Autoscaler)</td></tr>
+                <tr><td style="color:#6b7280;">Service Discovery</td><td style="color:#34d399;">CoreDNS</td></tr>
+                <tr><td style="color:#6b7280;">Self-Healing</td><td style="color:#34d399;">ReplicaSet + Pod Restart</td></tr>
+                <tr><td style="color:#6b7280;">Dashboard Port</td><td style="color:#22c55e;">localhost:30888</td></tr>
+            </table>
+        </div>
+    </div>
+
+    <!-- Benchmark Results -->
+    <div class="card" style="margin-top:24px;">
+        <div class="card-title">📊 Latest Benchmark Results</div>
+        <table class="sd-table" id="comparisonTable">
+            <thead>
+                <tr>
+                    <th>Metric</th>
+                    <th style="color:#818cf8;">Docker Swarm</th>
+                    <th style="color:#34d399;">Kubernetes</th>
+                    <th>Winner</th>
+                </tr>
+            </thead>
+            <tbody id="comparisonBody">
+                <tr><td>Throughput</td><td>85.3 req/s</td><td>97.2 req/s</td><td style="color:#34d399;">K8s ✅</td></tr>
+                <tr><td>Avg Latency</td><td>11.6ms</td><td>10.19ms</td><td style="color:#34d399;">K8s ✅</td></tr>
+                <tr><td>P50 Latency</td><td>6.5ms</td><td>6.2ms</td><td style="color:#34d399;">K8s ✅</td></tr>
+                <tr><td>P95 Latency</td><td>29.59ms</td><td>26.7ms</td><td style="color:#34d399;">K8s ✅</td></tr>
+                <tr><td>P99 Latency</td><td>33.58ms</td><td>29.23ms</td><td style="color:#34d399;">K8s ✅</td></tr>
+                <tr><td>Error Rate</td><td>0.0%</td><td>0.0%</td><td style="color:#6b7280;">Tie</td></tr>
+                <tr><td>Distribution Balance</td><td>0.0% dev</td><td>5.0% dev</td><td style="color:#818cf8;">Swarm ✅</td></tr>
+            </tbody>
+        </table>
+        <div style="margin-top:12px;font-size:0.75rem;color:#4b5563;">
+            Run <code style="color:#a78bfa;">python scripts/compare_platforms.py</code> to update benchmark data
+        </div>
+    </div>
 </div>
 
 <script>
@@ -306,9 +364,14 @@ async function sendBurstRequests(count) {
     const btn = count <= 20 ? document.getElementById('btnBurst') : document.getElementById('btnBurst100');
     btn.disabled = true;
     addLog(`Sending ${count} requests via Memory-Based LB (Algorithm 2)...`, 'success');
-    for (let i = 0; i < count; i++) {
-        await sendSingleRequest();
-        if (i % 5 === 0) { updateContainerGrid(); updateStats(); }
+    const batchSize = 5;
+    for (let i = 0; i < count; i += batchSize) {
+        const batch = [];
+        for (let j = 0; j < batchSize && (i + j) < count; j++) {
+            batch.push(sendSingleRequest());
+        }
+        await Promise.all(batch);
+        updateContainerGrid(); updateStats();
     }
     updateContainerGrid(); updateStats();
     const ids = Object.keys(containers);

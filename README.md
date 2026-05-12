@@ -131,6 +131,56 @@ bash scripts/simulate_multinode.sh status
 bash scripts/simulate_multinode.sh down
 ```
 
+## 🆚 Kubernetes Comparative Analysis
+
+This project also includes a **full Kubernetes deployment** to enable a direct comparison between Docker Swarm and Kubernetes, as described in the "Docker vs Kubernetes" research paper.
+
+### Deploy on Kubernetes
+
+1. **Enable Kubernetes** in Docker Desktop (Settings → Kubernetes → Enable).
+
+2. **Deploy the K8s stack**:
+   ```bash
+   kubectl apply -f k8s/
+   ```
+
+3. **Verify pods are running**:
+   ```bash
+   kubectl get pods -n cc-research
+   ```
+
+4. **Access the dashboard**: Open **`http://localhost:30888/`**
+
+5. **Tear down**:
+   ```bash
+   kubectl delete namespace cc-research
+   ```
+
+### Run Comparison Benchmark
+
+With **both** platforms running (Swarm on 8888, K8s on 30888):
+
+```bash
+python scripts/compare_platforms.py --requests 500 --concurrency 30
+```
+
+This generates a detailed comparison report in `results/comparison_report_*.md`.
+
+### K8s Chaos Test (Fault Tolerance)
+
+```bash
+bash scripts/k8s_chaos_test.sh
+```
+
+### What's Compared
+
+| Feature | Docker Swarm | Kubernetes |
+|---------|-------------|------------|
+| Load Balancing | Algorithm 2 (Memory-Based) | kube-proxy Round-Robin |
+| Auto-Scaling | Algorithm 1 (Custom Orchestrator) | HPA (Horizontal Pod Autoscaler) |
+| Service Discovery | Overlay DNS | CoreDNS |
+| Self-Healing | Swarm restart policy | Pod restart + ReplicaSet |
+
 ## 🔧 Useful Commands
 
 ```bash

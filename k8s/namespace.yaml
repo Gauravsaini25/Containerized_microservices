@@ -1,0 +1,9 @@
+# Kubernetes Namespace for CC Research
+# Isolates all resources for the comparative analysis
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cc-research
+  labels:
+    project: cc-research
+    paper: "docker-swarm-vs-kubernetes"

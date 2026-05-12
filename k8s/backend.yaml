@@ -1,0 +1,100 @@
+# Backend Deployment & Service for Kubernetes
+# =============================================
+# Deploys the same Flask microservice as Swarm, but uses:
+#   - K8s Deployment (vs Swarm replicated service)
+#   - K8s Service with default round-robin (vs Algorithm 2 memory-based LB)
+#   - K8s readiness/liveness probes (vs Swarm HEALTHCHECK)
+#   - K8s HPA for auto-scaling (vs Algorithm 1 custom orchestrator)
+#
+# This enables direct comparison of:
+#   1. K8s default round-robin vs Swarm Algorithm 2 (memory-based)
+#   2. K8s HPA vs Swarm Algorithm 1 (custom auto-scaling)
+#   3. K8s self-healing vs Swarm self-healing
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: cc-research
+  labels:
+    app: backend
+    component: api
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: backend
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: backend
+        component: api
+    spec:
+      # Spread pods across nodes (equivalent to Swarm spread placement)
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: backend
+      containers:
+        - name: backend
+          image: cc-research-backend:latest
+          imagePullPolicy: IfNotPresent  # Use local images
+          ports:
+            - containerPort: 5000
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+            requests:
+              cpu: "250m"
+              memory: "128Mi"
+          # Readiness probe - K8s equivalent of Swarm HEALTHCHECK
+          # K8s will not route traffic until this passes
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Liveness probe - if this fails, K8s restarts the pod (self-healing)
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+---
+# ClusterIP Service - K8s default round-robin load balancing
+# This is the K8s counterpart to Algorithm 2 (memory-based LB)
+# K8s uses iptables/IPVS round-robin by default
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: cc-research
+  labels:
+    app: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: backend
+  ports:
+    - port: 5000
+      targetPort: 5000
+      protocol: TCP

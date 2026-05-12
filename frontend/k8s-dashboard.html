@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kubernetes Dashboard - Pod Analytics & Comparison</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: #071a12; color: #e0f0e6; min-height: 100vh; }
+        .header { background: linear-gradient(135deg, #0a2918 0%, #132f1f 100%); border-bottom: 1px solid rgba(34,197,94,0.25); padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { font-size: 1.5rem; font-weight: 700; background: linear-gradient(135deg, #34d399, #22c55e, #4ade80); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .header .subtitle { font-size: 0.8rem; color: #6b8f7b; margin-top: 2px; }
+        .status-badge { display: flex; align-items: center; gap: 8px; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); padding: 8px 16px; border-radius: 20px; font-size: 0.85rem; color: #22c55e; }
+        .status-dot { width: 8px; height: 8px; background: #22c55e; border-radius: 50%; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(34,197,94,0.4);}50%{opacity:0.8;box-shadow:0 0 0 6px rgba(34,197,94,0);} }
+        .main { padding: 30px 40px; }
+        .grid { display: grid; gap: 24px; }
+        .grid-4 { grid-template-columns: repeat(4, 1fr); }
+        .grid-3 { grid-template-columns: repeat(3, 1fr); }
+        .grid-2 { grid-template-columns: repeat(2, 1fr); }
+        .card { background: linear-gradient(135deg, #0c2118 0%, #0a1f15 100%); border: 1px solid rgba(34,197,94,0.15); border-radius: 16px; padding: 24px; transition: all 0.3s ease; }
+        .card:hover { border-color: rgba(34,197,94,0.4); box-shadow: 0 8px 32px rgba(34,197,94,0.1); transform: translateY(-2px); }
+        .card-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1.5px; color: #6b8f7b; margin-bottom: 12px; }
+        .card-value { font-size: 2.2rem; font-weight: 700; background: linear-gradient(135deg, #34d399, #22c55e); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .card-value.purple { background: linear-gradient(135deg, #818cf8, #6366f1); -webkit-background-clip: text; }
+        .card-value.amber { background: linear-gradient(135deg, #fbbf24, #f59e0b); -webkit-background-clip: text; }
+        .card-value.cyan { background: linear-gradient(135deg, #22d3ee, #06b6d4); -webkit-background-clip: text; }
+        .card-value.small { font-size: 1.2rem; }
+        .section-title { font-size: 1.1rem; font-weight: 600; margin: 32px 0 16px; color: #86efac; display: flex; justify-content: space-between; align-items: center; }
+        .tag { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 0.7rem; font-weight: 600; margin-left: 8px; }
+        .tag-k8s { background: rgba(34,197,94,0.2); color: #34d399; }
+        .tag-swarm { background: rgba(99,102,241,0.2); color: #818cf8; }
+        .tag-hpa { background: rgba(251,191,36,0.2); color: #fbbf24; }
+        .container-pct { font-size: 0.85rem; color: #6b8f7b; margin-top: 4px; }
+        .chart-container { position: relative; height: 280px; }
+        .pod-card { background: linear-gradient(135deg, #0c2118, #0a1f15); border: 1px solid rgba(34,197,94,0.15); border-radius: 12px; padding: 20px; position: relative; overflow: hidden; }
+        .pod-card.active { border-color: rgba(34,197,94,0.5); box-shadow: 0 0 20px rgba(34,197,94,0.1); }
+        .pod-name { font-family: 'Courier New', monospace; font-size: 0.85rem; color: #34d399; margin-bottom: 8px; }
+        .pod-requests { font-size: 1.8rem; font-weight: 700; color: #e0f0e6; }
+        .progress-bar { height: 4px; background: rgba(34,197,94,0.1); border-radius: 2px; margin-top: 12px; overflow: hidden; }
+        .progress-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, #22c55e, #34d399); transition: width 0.5s ease; }
+        .btn-group { display: flex; gap: 12px; margin-top: 24px; flex-wrap: wrap; }
+        .btn { padding: 12px 24px; border: none; border-radius: 10px; font-family: 'Inter', sans-serif; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: all 0.3s ease; display: flex; align-items: center; gap: 8px; }
+        .btn-primary { background: linear-gradient(135deg, #22c55e, #16a34a); color: white; }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(34,197,94,0.4); }
+        .btn-danger { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; }
+        .btn-danger:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(239,68,68,0.4); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
+        .log-area { background: #040f0a; border: 1px solid rgba(34,197,94,0.1); border-radius: 10px; padding: 16px; font-family: 'Courier New', monospace; font-size: 0.8rem; max-height: 250px; overflow-y: auto; line-height: 1.8; }
+        .log-entry .time { color: #3f6b55; }
+        .log-entry .pod { color: #34d399; }
+        .log-entry .success { color: #22c55e; }
+        .log-entry .error { color: #ef4444; }
+        .sd-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+        .sd-table th { text-align: left; padding: 10px; color: #6b8f7b; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid rgba(34,197,94,0.1); }
+        .sd-table td { padding: 10px; font-size: 0.85rem; border-bottom: 1px solid rgba(34,197,94,0.05); }
+        .platform-banner { background: linear-gradient(135deg, rgba(34,197,94,0.1), rgba(22,163,74,0.05)); border: 1px solid rgba(34,197,94,0.2); border-radius: 12px; padding: 16px 24px; margin-bottom: 24px; display: flex; align-items: center; gap: 16px; }
+        .platform-banner .icon { font-size: 2rem; }
+        .platform-banner .info { flex: 1; }
+        .platform-banner .info h3 { color: #34d399; font-size: 1rem; }
+        .platform-banner .info p { color: #6b8f7b; font-size: 0.8rem; margin-top: 4px; }
+        .vs-card { display: flex; gap: 24px; margin-top: 24px; }
+        .vs-side { flex: 1; border-radius: 12px; padding: 20px; }
+        .vs-swarm { background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(79,70,229,0.04)); border: 1px solid rgba(99,102,241,0.2); }
+        .vs-k8s { background: linear-gradient(135deg, rgba(34,197,94,0.08), rgba(22,163,74,0.04)); border: 1px solid rgba(34,197,94,0.2); }
+        @media (max-width: 900px) { .grid-4{grid-template-columns:repeat(2,1fr);} .grid-3,.grid-2{grid-template-columns:1fr;} .main{padding:16px;} .vs-card{flex-direction:column;} }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div>
+        <h1>☸️ Kubernetes Dashboard</h1>
+        <div class="subtitle">HPA Auto-Scaling | CoreDNS Service Discovery | kube-proxy Round-Robin LB</div>
+    </div>
+    <div class="status-badge">
+        <div class="status-dot"></div>
+        <span id="k8sStatus">Kubernetes Active</span>
+    </div>
+</div>
+
+<div class="main">
+    <!-- Platform Banner -->
+    <div class="platform-banner">
+        <div class="icon">☸️</div>
+        <div class="info">
+            <h3>Kubernetes Orchestration Platform</h3>
+            <p>Using native HPA for auto-scaling, kube-proxy for load balancing, and CoreDNS for service discovery</p>
+        </div>
+        <div style="text-align:right;">
+            <div style="font-size:0.7rem;color:#6b8f7b;text-transform:uppercase;letter-spacing:1px;">Port</div>
+            <div style="font-size:1.2rem;font-weight:700;color:#34d399;">30888</div>
+        </div>
+    </div>
+
+    <!-- K8s Overview Cards -->
+    <div class="section-title">
+        <div>📊 Kubernetes Cluster Overview <span class="tag tag-k8s">K8S</span></div>
+    </div>
+    <div class="grid grid-4">
+        <div class="card"><div class="card-title">Total Requests</div><div class="card-value" id="totalRequests">0</div></div>
+        <div class="card"><div class="card-title">Active Pods</div><div class="card-value" id="activePods">0</div></div>
+        <div class="card"><div class="card-title">Redis Status</div><div class="card-value cyan" id="redisStatus">—</div></div>
+        <div class="card"><div class="card-title">LB Strategy</div><div class="card-value amber" id="lbStrategy">Round-Robin</div></div>
+    </div>
+
+    <!-- HPA Status -->
+    <div class="section-title">
+        <div>⚡ HPA Auto-Scaling Status <span class="tag tag-hpa">HPA</span></div>
+        <div class="tag tag-k8s">Native K8s Controller</div>
+    </div>
+    <div class="grid grid-4">
+        <div class="card"><div class="card-title">Backend Pods</div><div class="card-value" id="hpaReplicas">4</div><div class="container-pct">Min: 2 | Max: 8</div></div>
+        <div class="card"><div class="card-title">CPU Target</div><div class="card-value amber" id="hpaCpuTarget">70%</div><div class="container-pct">Horizontal Pod Autoscaler</div></div>
+        <div class="card"><div class="card-title">Scale-Up Cooldown</div><div class="card-value cyan" id="hpaScaleUp">30s</div><div class="container-pct">Stabilization window</div></div>
+        <div class="card"><div class="card-title">Scale-Down Cooldown</div><div class="card-value purple" id="hpaScaleDown">60s</div><div class="container-pct">Stabilization window</div></div>
+    </div>
+
+    <!-- Pod Distribution -->
+    <div class="section-title">📦 Pod Load Distribution (kube-proxy Round-Robin)</div>
+    <div class="grid grid-4" id="podGrid"></div>
+
+    <!-- Charts -->
+    <div class="section-title">📈 Real-Time Analytics</div>
+    <div class="grid grid-2">
+        <div class="card">
+            <div class="card-title">Request Distribution (Per Pod)</div>
+            <div class="chart-container"><canvas id="pieChart"></canvas></div>
+        </div>
+        <div class="card">
+            <div class="card-title">Latency Over Time (ms)</div>
+            <div class="chart-container"><canvas id="latencyChart"></canvas></div>
+        </div>
+    </div>
+
+    <!-- Testing Controls -->
+    <div class="section-title">🧪 Live Testing Controls</div>
+    <div class="card">
+        <div class="btn-group">
+            <button class="btn btn-primary" onclick="sendBurst(20)" id="btnBurst">🚀 Send 20 Requests</button>
+            <button class="btn btn-primary" onclick="sendBurst(100)" id="btnBurst100">⚡ Send 100 Requests</button>
+            <button class="btn btn-danger" onclick="resetStats()" id="btnReset">🔄 Reset Stats</button>
+        </div>
+        <div style="margin-top: 20px;">
+            <div class="card-title">Live Activity Log</div>
+            <div class="log-area" id="logArea">
+                <div class="log-entry"><span class="success">Kubernetes dashboard ready. Click a button to start testing.</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Service Discovery -->
+    <div class="section-title">🔍 Kubernetes Service Discovery (CoreDNS)</div>
+    <div class="card">
+        <table class="sd-table">
+            <thead><tr><th>Service</th><th>Type</th><th>Replicas</th><th>DNS Name</th><th>K8s Resource</th><th>Status</th></tr></thead>
+            <tbody>
+                <tr><td style="color:#34d399;font-family:monospace;">frontend</td><td>Nginx Proxy</td><td>1</td><td>frontend.cc-research.svc</td><td>NodePort:30888</td><td style="color:#22c55e;">● Running</td></tr>
+                <tr><td style="color:#34d399;font-family:monospace;">backend</td><td>Flask API</td><td id="sdPodCount">4</td><td>backend.cc-research.svc</td><td>ClusterIP + HPA</td><td style="color:#22c55e;">● Running</td></tr>
+                <tr><td style="color:#34d399;font-family:monospace;">redis</td><td>Redis Cache</td><td>1</td><td>redis.cc-research.svc</td><td>ClusterIP</td><td style="color:#22c55e;" id="redisSvc">● Running</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Comparison Section -->
+    <div class="section-title">🆚 Platform Comparison: Docker Swarm vs Kubernetes</div>
+    <div class="vs-card">
+        <div class="vs-side vs-swarm">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+                <span style="font-size:1.3rem;">🐳</span>
+                <span style="font-weight:700;color:#818cf8;">Docker Swarm</span>
+                <span class="tag tag-swarm">PORT 8888</span>
+            </div>
+            <table class="sd-table">
+                <tr><td style="color:#6b8f7b;">Load Balancing</td><td style="color:#818cf8;">Algorithm 2 (Memory-Based)</td></tr>
+                <tr><td style="color:#6b8f7b;">Auto-Scaling</td><td style="color:#818cf8;">Algorithm 1 (Custom Python)</td></tr>
+                <tr><td style="color:#6b8f7b;">Service Discovery</td><td style="color:#818cf8;">Overlay Network DNS</td></tr>
+                <tr><td style="color:#6b8f7b;">Self-Healing</td><td style="color:#818cf8;">Swarm Restart Policy</td></tr>
+            </table>
+        </div>
+        <div class="vs-side vs-k8s">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+                <span style="font-size:1.3rem;">☸️</span>
+                <span style="font-weight:700;color:#34d399;">Kubernetes</span>
+                <span class="tag tag-k8s">PORT 30888</span>
+            </div>
+            <table class="sd-table">
+                <tr><td style="color:#6b8f7b;">Load Balancing</td><td style="color:#34d399;">kube-proxy Round-Robin</td></tr>
+                <tr><td style="color:#6b8f7b;">Auto-Scaling</td><td style="color:#34d399;">HPA (Native Controller)</td></tr>
+                <tr><td style="color:#6b8f7b;">Service Discovery</td><td style="color:#34d399;">CoreDNS</td></tr>
+                <tr><td style="color:#6b8f7b;">Self-Healing</td><td style="color:#34d399;">ReplicaSet + Pod Restart</td></tr>
+            </table>
+        </div>
+    </div>
+
+    <!-- Benchmark Table -->
+    <div class="card" style="margin-top:24px;">
+        <div class="card-title">📊 Latest Benchmark Results (200 requests, 20 concurrency)</div>
+        <table class="sd-table">
+            <thead><tr><th>Metric</th><th style="color:#818cf8;">Docker Swarm</th><th style="color:#34d399;">Kubernetes</th><th>Winner</th></tr></thead>
+            <tbody>
+                <tr><td>Throughput</td><td>85.3 req/s</td><td>97.2 req/s</td><td style="color:#34d399;">K8s ✅</td></tr>
+                <tr><td>Avg Latency</td><td>11.6ms</td><td>10.19ms</td><td style="color:#34d399;">K8s ✅</td></tr>
+                <tr><td>P50 Latency</td><td>6.5ms</td><td>6.2ms</td><td style="color:#34d399;">K8s ✅</td></tr>
+                <tr><td>P95 Latency</td><td>29.59ms</td><td>26.7ms</td><td style="color:#34d399;">K8s ✅</td></tr>
+                <tr><td>P99 Latency</td><td>33.58ms</td><td>29.23ms</td><td style="color:#34d399;">K8s ✅</td></tr>
+                <tr><td>Error Rate</td><td>0.0%</td><td>0.0%</td><td style="color:#6b8f7b;">Tie</td></tr>
+                <tr><td>Distribution Balance</td><td>0.0% dev</td><td>5.0% dev</td><td style="color:#818cf8;">Swarm ✅</td></tr>
+            </tbody>
+        </table>
+        <div style="margin-top:12px;font-size:0.75rem;color:#3f6b55;">
+            Run <code style="color:#34d399;">python scripts/compare_platforms.py</code> to update benchmark data
+        </div>
+    </div>
+</div>
+
+<script>
+const API = '/api';
+const COLORS = ['#22c55e','#34d399','#4ade80','#86efac','#a7f3d0','#6ee7b7','#10b981','#059669'];
+let pods = {};
+let latencies = [];
+let pieChart, latencyChart;
+let timeLabels = [];
+
+function initCharts() {
+    pieChart = new Chart(document.getElementById('pieChart').getContext('2d'), {
+        type: 'doughnut',
+        data: { labels: [], datasets: [{ data: [], backgroundColor: COLORS, borderWidth: 0, hoverOffset: 8 }] },
+        options: { responsive: true, maintainAspectRatio: false, cutout: '65%',
+            plugins: { legend: { position: 'bottom', labels: { color: '#86efac', font: { family: 'Courier New', size: 11 }, padding: 12 } } } }
+    });
+    latencyChart = new Chart(document.getElementById('latencyChart').getContext('2d'), {
+        type: 'line',
+        data: { labels: [], datasets: [{
+            label: 'Avg Latency (ms)', data: [], borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.1)',
+            fill: true, tension: 0.3, borderWidth: 2, pointRadius: 3
+        }] },
+        options: { responsive: true, maintainAspectRatio: false,
+            scales: { x: { ticks: { color: '#3f6b55', maxTicksLimit: 10 }, grid: { color: 'rgba(34,197,94,0.05)' } },
+                      y: { ticks: { color: '#3f6b55', callback: v => v + 'ms' }, grid: { color: 'rgba(34,197,94,0.05)' }, beginAtZero: true, title: { display: true, text: 'Latency (ms)', color: '#6b8f7b' } } },
+            plugins: { legend: { labels: { color: '#86efac' } } } }
+    });
+}
+
+function addLog(msg, type = 'success') {
+    const area = document.getElementById('logArea');
+    const ts = new Date().toLocaleTimeString();
+    area.innerHTML += `<div class="log-entry"><span class="time">[${ts}]</span> <span class="${type}">${msg}</span></div>`;
+    area.scrollTop = area.scrollHeight;
+}
+
+function updatePodGrid() {
+    const grid = document.getElementById('podGrid');
+    const total = Object.values(pods).reduce((a, b) => a + b, 0);
+    const entries = Object.entries(pods).sort((a, b) => b[1] - a[1]);
+    grid.innerHTML = '';
+    entries.forEach(([pod, count], i) => {
+        const pct = total > 0 ? (count / total * 100).toFixed(1) : 0;
+        grid.innerHTML += `
+            <div class="pod-card active">
+                <div class="pod-name">☸️ ${pod.substring(0, 28)}</div>
+                <div class="pod-requests">${count}</div>
+                <div class="container-pct">${pct}% of traffic</div>
+                <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+            </div>`;
+    });
+    document.getElementById('activePods').textContent = entries.length;
+    document.getElementById('sdPodCount').textContent = entries.length || 4;
+    document.getElementById('totalRequests').textContent = total;
+}
+
+function updateCharts() {
+    const labels = Object.keys(pods).map(p => p.substring(0, 20));
+    const data = Object.values(pods);
+    pieChart.data.labels = labels;
+    pieChart.data.datasets[0].data = data;
+    pieChart.update();
+}
+
+async function sendBurst(n) {
+    const btn = n === 20 ? document.getElementById('btnBurst') : document.getElementById('btnBurst100');
+    btn.disabled = true;
+    addLog(`Sending ${n} requests to K8s backend...`, 'success');
+    let batchLatencies = [];
+
+    const batchSize = 5;
+    for (let i = 0; i < n; i += batchSize) {
+        const batch = [];
+        for (let j = 0; j < batchSize && (i + j) < n; j++) {
+            batch.push((async () => {
+                try {
+                    const start = performance.now();
+                    const res = await fetch(`${API}/`);
+                    const elapsed = performance.now() - start;
+                    const data = await res.json();
+                    const pod = data.container_id || 'unknown';
+                    pods[pod] = (pods[pod] || 0) + 1;
+                    batchLatencies.push(elapsed);
+                } catch (e) {
+                    addLog(`Request failed: ${e.message}`, 'error');
+                }
+            })());
+        }
+        await Promise.all(batch);
+        updatePodGrid();
+        updateCharts();
+    }
+
+    const avgLat = batchLatencies.length > 0 ? (batchLatencies.reduce((a, b) => a + b, 0) / batchLatencies.length).toFixed(1) : 0;
+    const now = new Date().toLocaleTimeString();
+    timeLabels.push(now);
+    latencyChart.data.labels = timeLabels;
+    latencyChart.data.datasets[0].data.push(parseFloat(avgLat));
+    latencyChart.update();
+
+    updatePodGrid();
+    updateCharts();
+    addLog(`Burst complete: ${n} requests, avg latency ${avgLat}ms, ${Object.keys(pods).length} pods used`, 'success');
+    btn.disabled = false;
+}
+
+function resetStats() {
+    pods = {};
+    latencies = [];
+    timeLabels = [];
+    latencyChart.data.labels = [];
+    latencyChart.data.datasets[0].data = [];
+    latencyChart.update();
+    updatePodGrid();
+    updateCharts();
+    document.getElementById('logArea').innerHTML = '<div class="log-entry"><span class="success">Stats reset. Ready for new tests.</span></div>';
+}
+
+async function fetchInitialStats() {
+    try {
+        const res = await fetch(`${API}/`);
+        const data = await res.json();
+        const pod = data.container_id || 'unknown';
+        pods[pod] = (pods[pod] || 0) + 1;
+        document.getElementById('redisStatus').textContent = data.redis_connected ? '● Connected' : '✕ Down';
+        updatePodGrid();
+        updateCharts();
+    } catch (e) { /* backend not ready yet */ }
+}
+
+async function fetchAggregatedStats() {
+    try {
+        const res = await fetch(`${API}/stats`);
+        const data = await res.json();
+        if (data.request_distribution_per_container) {
+            for (const [k, v] of Object.entries(data.request_distribution_per_container)) {
+                pods[k] = parseInt(v) || 0;
+            }
+            updatePodGrid();
+            updateCharts();
+        }
+        document.getElementById('redisStatus').textContent = data.redis_connected ? '● Connected' : '✕ Down';
+    } catch (e) { /* silent */ }
+}
+
+initCharts();
+fetchInitialStats();
+fetchAggregatedStats();
+setInterval(fetchAggregatedStats, 5000);
+</script>
+</body>
+</html>

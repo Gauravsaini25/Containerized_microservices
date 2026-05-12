@@ -25,6 +25,7 @@ import time
 import socket
 import threading
 import json
+import random
 from datetime import datetime
 from collections import deque
 from flask import Flask, jsonify, request, Response
@@ -237,7 +238,13 @@ def select_backend():
             return None, None, 0, f"All containers above {MEMORY_THRESHOLD_PERCENT}% memory threshold"
     
     # Select container with LOWEST memory usage (Algorithm 2 core logic)
-    selected_id = min(stats_snapshot, key=lambda k: stats_snapshot[k].get("memory_percent", 100))
+    # Enhanced: When multiple containers have similar memory (within TIEBREAK_MARGIN),
+    # randomly select among them to avoid always routing to the same container.
+    TIEBREAK_MARGIN = 5.0  # percent
+    min_memory = min(stats_snapshot[k].get("memory_percent", 100) for k in stats_snapshot)
+    candidates = [k for k in stats_snapshot
+                  if stats_snapshot[k].get("memory_percent", 100) <= min_memory + TIEBREAK_MARGIN]
+    selected_id = random.choice(candidates) if candidates else min(stats_snapshot, key=lambda k: stats_snapshot[k].get("memory_percent", 100))
     selected = stats_snapshot[selected_id]
     
     total_requests_routed += 1
