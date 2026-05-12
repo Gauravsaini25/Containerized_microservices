@@ -197,7 +197,7 @@ docker service logs cc_research_orchestrator
 docker stack rm cc_research
 ```
 
-## 📁 Project Structure
+## 📁 Project Structure  
 
 ```
 cc_research/
