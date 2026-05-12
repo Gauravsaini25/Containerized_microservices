@@ -82,7 +82,7 @@ Open **`http://localhost:8888/`** in your browser to view the real-time monitori
 
 ## 🧪 Testing & Validation
 
-### Professional Load Testing (`load_generator.py`)
+### Professional Load Testing : `load_generator.py`
 A powerful, asynchronous Python script is provided to test the cluster under various conditions.
 
 1. **Install requirements**:
